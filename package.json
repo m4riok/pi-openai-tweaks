@@ -1,0 +1,28 @@
+{
+  "name": "@m4riok/pi-openai-tweaks",
+  "version": "0.1.1",
+  "description": "Pi extension for Codex usage visibility and fast-mode control",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "pi-package"
+  ],
+  "engines": {
+    "node": ">=20.6"
+  },
+  "pi": {
+    "extensions": [
+      "./src/extension.ts"
+    ]
+  },
+  "scripts": {
+    "check": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "typescript": "^5.8.3"
+  }
+}
