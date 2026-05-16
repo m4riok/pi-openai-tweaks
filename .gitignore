@@ -1,0 +1,16 @@
+node_modules/
+*.log
+.DS_Store
+.npm/
+coverage/
+dist/
+.cache/
+*.tsbuildinfo
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+.vscode/
+# CocoIndex Code (ccc)
+/.cocoindex_code/
+.srclight/
+.serena/
