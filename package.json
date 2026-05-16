@@ -1,6 +1,6 @@
 {
   "name": "@m4riok/pi-openai-tweaks",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Pi extension for Codex usage visibility and fast-mode control",
   "type": "module",
   "license": "MIT",
