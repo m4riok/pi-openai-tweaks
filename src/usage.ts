@@ -3,11 +3,22 @@ import { resolveAuth } from "./auth.js";
 import { SCHEMA_VERSION } from "./types.js";
 import type { CacheOptions, CodexUsageSnapshot, LimitWindow, RateLimit } from "./types.js";
 
-const USAGE_ENDPOINT = "https://chatgpt.com/backend-api/codex/usage";
+export interface UsageAuthOverride {
+  accessToken: string;
+  accountId?: string;
+  source?: string;
+}
+
+interface UsageSnapshotOptions extends CacheOptions {
+  auth?: UsageAuthOverride;
+}
+
+const USAGE_ENDPOINT = "https://chatgpt.com/backend-api/wham/usage";
 const CACHE_MAX_AGE_MS = 60_000;
 
 type ApiWindow = {
   used_percent?: number;
+  limit_window_seconds?: number;
   reset_at?: number;
   reset_after_seconds?: number;
 };
@@ -27,29 +38,50 @@ type ApiUsage = {
 const num = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
 const str = (v: unknown): string | undefined => (typeof v === "string" && v.length > 0 ? v : undefined);
 
+const FIVE_HOUR_SECONDS = 5 * 60 * 60;
+const WEEK_SECONDS = 7 * 24 * 60 * 60;
+
 function normalizeWindow(api?: ApiWindow | null): LimitWindow | undefined {
   if (!api) return undefined;
+
   const used = num(api.used_percent);
   if (used === undefined) return undefined;
-  const clamped = Math.min(100, Math.max(0, used));
+
+  const usedPercent = Math.min(100, Math.max(0, used));
   return {
-    usedPercent: clamped,
-    leftPercent: Math.min(100, Math.max(0, 100 - clamped)),
+    usedPercent,
+    leftPercent: Math.min(100, Math.max(0, 100 - usedPercent)),
     resetAt: num(api.reset_at),
     resetAfterSeconds: num(api.reset_after_seconds),
   };
 }
 
-function normalizeDefaultLimit(api?: ApiRateLimit | null): RateLimit | undefined {
+function windowSeconds(api?: ApiWindow | null): number | undefined {
+  return num(api?.limit_window_seconds);
+}
+
+export function normalizeDefaultLimit(api?: ApiRateLimit | null): RateLimit | undefined {
   if (!api) return undefined;
-  const primary = normalizeWindow(api.primary_window);
-  const secondary = normalizeWindow(api.secondary_window);
+
+  const windows = [api.primary_window, api.secondary_window];
+  const fiveHourRaw = windows.find((w) => {
+    const s = windowSeconds(w);
+    return s !== undefined && Math.abs(s - FIVE_HOUR_SECONDS) <= 120;
+  });
+  const weeklyRaw = windows.find((w) => {
+    const s = windowSeconds(w);
+    return s !== undefined && Math.abs(s - WEEK_SECONDS) <= 120;
+  });
+
+  const primary = normalizeWindow(fiveHourRaw);
+  const secondary = normalizeWindow(weeklyRaw);
+
   if (!primary && !secondary) return undefined;
   return { id: "codex", name: "Codex", primary, secondary };
 }
 
-async function fetchUsageFromApi(): Promise<CodexUsageSnapshot> {
-  const auth = await resolveAuth("auto");
+async function fetchUsageFromApi(authOverride?: UsageAuthOverride): Promise<CodexUsageSnapshot> {
+  const auth = authOverride ?? await resolveAuth("auto");
   const res = await fetch(USAGE_ENDPOINT, {
     headers: {
       authorization: `Bearer ${auth.accessToken}`,
@@ -79,14 +111,15 @@ async function fetchUsageFromApi(): Promise<CodexUsageSnapshot> {
   };
 }
 
-export async function getUsageSnapshot(options: CacheOptions = {}): Promise<CodexUsageSnapshot> {
+export async function getUsageSnapshot(options: UsageSnapshotOptions = {}): Promise<CodexUsageSnapshot> {
   const maxAgeMs = options.maxAgeMs ?? CACHE_MAX_AGE_MS;
-  if (!options.noCache) {
+  const canUseCache = !options.auth && !options.noCache;
+  if (canUseCache) {
     const cached = await readCachedSnapshot();
     if (cached && isFresh(cached, maxAgeMs)) return { ...cached, source: "cache" };
   }
 
-  const snapshot = await fetchUsageFromApi();
-  await writeCachedSnapshot(snapshot).catch(() => undefined);
+  const snapshot = await fetchUsageFromApi(options.auth);
+  if (!options.auth) await writeCachedSnapshot(snapshot).catch(() => undefined);
   return snapshot;
 }

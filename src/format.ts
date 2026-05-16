@@ -7,7 +7,8 @@ type Colorize = (color: ColorName, text: string) => string;
 
 function pct(value?: number): string {
   if (value === undefined || !Number.isFinite(value)) return "?%";
-  return `${Math.round(value)}%`;
+  const clamped = Math.min(100, Math.max(0, value));
+  return `${Math.round(clamped)}%`;
 }
 
 function displayPercent(window: LimitWindow | undefined, mode: UsageDisplayConfig["percentMode"]): string {
@@ -30,13 +31,19 @@ function formatHoursMinutes(totalSeconds?: number): string {
   if (totalSeconds === undefined) return "?";
   const h = Math.floor(totalSeconds / 3600);
   const m = Math.floor((totalSeconds % 3600) / 60);
-  return `${h}h${m}m`;
+  const parts = [];
+  if (h > 0) parts.push(`${h}h`);
+  if (m > 0) parts.push(`${m}m`);
+  return parts.length > 0 ? parts.join("") : "a few seconds";
 }
 
 function formatWeekly(totalSeconds?: number): string {
   if (totalSeconds === undefined) return "?";
-  const days = totalSeconds / 86400;
-  if (days >= 1) return `~${Math.round(days)}d`;
+  const days = Math.floor(totalSeconds / 86400);
+  if (days >= 1) {
+    const hours = Math.floor((totalSeconds % 86400) / 3600);
+    return hours > 0 ? `${days}d${hours}h` : `${days}d`;
+  }
   return formatHoursMinutes(totalSeconds);
 }
 

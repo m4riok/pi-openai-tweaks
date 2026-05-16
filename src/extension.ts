@@ -3,8 +3,9 @@ import { dirname, join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { DynamicBorder, getAgentDir, getSettingsListTheme } from "@earendil-works/pi-coding-agent";
 import { Container, SettingsList, type SettingItem } from "@earendil-works/pi-tui";
-import { getUsageSnapshot } from "./usage.js";
+import { getUsageSnapshot, type UsageAuthOverride } from "./usage.js";
 import { formatUsageStatusline } from "./format.js";
+import { extractClaims } from "./jwt.js";
 import { loadDisplayConfig, saveDisplayConfig, type UsageDisplayConfig } from "./config.js";
 
 const STATUS_KEY = "usage";
@@ -71,6 +72,10 @@ function isFastEligible(ctx: any): boolean {
   }
 }
 
+function isOpenAICodexProvider(provider: unknown): boolean {
+  return typeof provider === "string" && (provider === FAST_PROVIDER_ID || /^openai-codex-\d+$/.test(provider));
+}
+
 function updateFastStatus(ctx: any, enabled: boolean): void {
   if (!ctx?.ui?.setStatus) return;
   if (!enabled || !isFastEligible(ctx)) {
@@ -91,8 +96,22 @@ function updateFastStatus(ctx: any, enabled: boolean): void {
   ctx.ui.setStatus(FAST_STATUS_KEY, `\u001b[38;5;114m${badgeRaw}\u001b[0m`);
 }
 
+async function getModelUsageAuth(ctx: any): Promise<UsageAuthOverride | undefined> {
+  const model = ctx?.model;
+  const registry = ctx?.modelRegistry;
+  if (!model || typeof registry?.getApiKeyAndHeaders !== "function") return undefined;
+  if (!isOpenAICodexProvider(model.provider)) return undefined;
+
+  const auth = await registry.getApiKeyAndHeaders(model);
+  if (!auth?.ok || !auth.apiKey) return undefined;
+
+  const claims = extractClaims(auth.apiKey);
+  return { accessToken: auth.apiKey, accountId: claims.accountId, source: "model" };
+}
+
 async function refreshStatus(ctx: any, display: UsageDisplayConfig, fastMode: boolean, noCache = false): Promise<string> {
-  const snapshot = await getUsageSnapshot({ maxAgeMs: CACHE_TTL_MS, noCache });
+  const modelAuth = await getModelUsageAuth(ctx).catch(() => undefined);
+  const snapshot = await getUsageSnapshot({ maxAgeMs: CACHE_TTL_MS, noCache: noCache || !!modelAuth, auth: modelAuth });
   const colorize = (color: "success" | "warning" | "error", text: string): string => {
     const fg = ctx?.ui?.theme?.fg;
     if (typeof fg === "function") {
