@@ -1,12 +1,14 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { DynamicBorder, getAgentDir, getSettingsListTheme } from "@earendil-works/pi-coding-agent";
-import { Container, SettingsList, type SettingItem } from "@earendil-works/pi-tui";
-import { getUsageSnapshot, type UsageAuthOverride } from "./usage.js";
-import { formatUsageStatusline } from "./format.js";
-import { extractClaims } from "./jwt.js";
-import { loadDisplayConfig, saveDisplayConfig, type UsageDisplayConfig } from "./config.js";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import type { SettingItem } from "@earendil-works/pi-tui";
+import { getUsageSnapshot, type UsageAuthOverride } from "./src/usage.js";
+import { formatUsageStatusline } from "./src/format.js";
+import { extractClaims } from "./src/jwt.js";
+import { DEFAULT_USAGE_DISPLAY_CONFIG, loadDisplayConfig, saveDisplayConfig, type UsageDisplayConfig } from "./src/config.js";
+import { openSettingsMenu } from "./src/settings-menu.js";
+import { registerAutoCompact } from "./src/auto-compact.js";
 
 const STATUS_KEY = "usage";
 const FAST_STATUS_KEY = "fast";
@@ -136,8 +138,10 @@ async function refreshStatus(ctx: any, display: UsageDisplayConfig, fastMode: bo
   return line;
 }
 
-export default function usageExtension(pi: ExtensionAPI): void {
-  let display: UsageDisplayConfig = { format: "default", showWeekly: true, percentMode: "remaining", updateMode: "turn" };
+export default function piOpenAiTweaksExtension(pi: ExtensionAPI): void {
+  registerAutoCompact(pi);
+
+  let display: UsageDisplayConfig = DEFAULT_USAGE_DISPLAY_CONFIG;
   let fastConfigEnabled = false;
   let fastOverride: FastOverride = "auto";
   let pollTimer: NodeJS.Timeout | undefined;
@@ -215,9 +219,12 @@ export default function usageExtension(pi: ExtensionAPI): void {
       const items = [
         { value: "refresh", label: "refresh", description: "Bypass local cache" },
         { value: "format", label: "format", description: "Open format selector" },
+        { value: "5h", label: "5h", description: "Open 5h selector" },
         { value: "weekly", label: "weekly", description: "Open weekly selector" },
         { value: "format default", label: "format default", description: "Verbose status format" },
         { value: "format compact", label: "format compact", description: "Short status format" },
+        { value: "5h on", label: "5h on", description: "Show 5h window" },
+        { value: "5h off", label: "5h off", description: "Hide 5h window" },
         { value: "weekly on", label: "weekly on", description: "Show 7d window" },
         { value: "weekly off", label: "weekly off", description: "Hide 7d window" },
         { value: "percent remaining", label: "percent remaining", description: "Show % remaining" },
@@ -234,46 +241,24 @@ export default function usageExtension(pi: ExtensionAPI): void {
         const parts = input.split(/\s+/).filter(Boolean);
 
         if (parts.length === 0 && ctx?.ui?.custom) {
-          await ctx.ui.custom((tui: any, _theme: any, _kb: any, done: (value?: unknown) => void) => {
-            const items: SettingItem[] = [
-              { id: "format", label: "Format", description: "Statusline format", currentValue: display.format, values: ["default", "compact"] },
-              { id: "weekly", label: "Show weekly", description: "Show/hide 7d usage window", currentValue: display.showWeekly ? "on" : "off", values: ["on", "off"] },
-              { id: "percent", label: "Percent mode", description: "Show percentage used vs remaining", currentValue: display.percentMode, values: ["remaining", "used"] },
-              { id: "update", label: "Update mode", description: "Refresh on turn or polling interval", currentValue: display.updateMode, values: ["turn", "poll"] },
-            ];
+          const items: SettingItem[] = [
+            { id: "format", label: "Format", description: "Statusline format", currentValue: display.format, values: ["default", "compact"] },
+            { id: "5h", label: "Show 5h", description: "Show/hide 5h usage window", currentValue: display.show5h ? "on" : "off", values: ["on", "off"] },
+            { id: "weekly", label: "Show weekly", description: "Show/hide 7d usage window", currentValue: display.showWeekly ? "on" : "off", values: ["on", "off"] },
+            { id: "percent", label: "Percent mode", description: "Show percentage used vs remaining", currentValue: display.percentMode, values: ["remaining", "used"] },
+            { id: "update", label: "Update mode", description: "Refresh on turn or polling interval", currentValue: display.updateMode, values: ["turn", "poll"] },
+          ];
 
-            const container = new Container();
-            container.addChild(new DynamicBorder());
+          await openSettingsMenu(ctx, items, async (id, newValue) => {
+            if (id === "format" && (newValue === "default" || newValue === "compact")) display = { ...display, format: newValue };
+            else if (id === "5h") display = { ...display, show5h: newValue === "on" };
+            else if (id === "weekly") display = { ...display, showWeekly: newValue === "on" };
+            else if (id === "percent" && (newValue === "remaining" || newValue === "used")) display = { ...display, percentMode: newValue };
+            else if (id === "update" && (newValue === "turn" || newValue === "poll")) display = { ...display, updateMode: newValue };
 
-            const settingsList = new SettingsList(
-              items,
-              10,
-              getSettingsListTheme(),
-              async (id: string, newValue: string) => {
-                if (id === "format" && (newValue === "default" || newValue === "compact")) display = { ...display, format: newValue };
-                else if (id === "weekly") display = { ...display, showWeekly: newValue === "on" };
-                else if (id === "percent" && (newValue === "remaining" || newValue === "used")) display = { ...display, percentMode: newValue };
-                else if (id === "update" && (newValue === "turn" || newValue === "poll")) display = { ...display, updateMode: newValue };
-
-                await saveDisplayConfig(display);
-                syncPolling();
-                await refreshStatus(ctx, display, isFastEnabled(), false);
-              },
-              () => done(undefined),
-              { enableSearch: true },
-            );
-
-            container.addChild(settingsList);
-            container.addChild(new DynamicBorder());
-
-            return {
-              render: (width: number) => container.render(width),
-              invalidate: () => container.invalidate(),
-              handleInput: (data: string) => {
-                settingsList.handleInput?.(data);
-                tui.requestRender();
-              },
-            };
+            await saveDisplayConfig(display);
+            syncPolling();
+            await refreshStatus(ctx, display, isFastEnabled(), false);
           });
 
           await refreshStatus(ctx, display, isFastEnabled(), false);
@@ -284,6 +269,17 @@ export default function usageExtension(pi: ExtensionAPI): void {
           const formatChoice = await ctx.ui.select("Usage format", ["default", "compact"]);
           if (formatChoice === "default" || formatChoice === "compact") {
             display = { ...display, format: formatChoice };
+            await saveDisplayConfig(display);
+          }
+          const line = await refreshStatus(ctx, display, isFastEnabled(), false);
+          ctx.ui?.notify?.(line, "info");
+          return;
+        }
+
+        if (parts[0] === "5h" && !parts[1] && ctx?.ui?.select) {
+          const fiveHourChoice = await ctx.ui.select("Show 5h", ["on", "off"]);
+          if (fiveHourChoice === "on" || fiveHourChoice === "off") {
+            display = { ...display, show5h: fiveHourChoice === "on" };
             await saveDisplayConfig(display);
           }
           const line = await refreshStatus(ctx, display, isFastEnabled(), false);
@@ -304,6 +300,9 @@ export default function usageExtension(pi: ExtensionAPI): void {
 
         if (parts[0] === "format" && (parts[1] === "default" || parts[1] === "compact")) {
           display = { ...display, format: parts[1] };
+          await saveDisplayConfig(display);
+        } else if (parts[0] === "5h" && (parts[1] === "on" || parts[1] === "off")) {
+          display = { ...display, show5h: parts[1] === "on" };
           await saveDisplayConfig(display);
         } else if (parts[0] === "weekly" && (parts[1] === "on" || parts[1] === "off")) {
           display = { ...display, showWeekly: parts[1] === "on" };

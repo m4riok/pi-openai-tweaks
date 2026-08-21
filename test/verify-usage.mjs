@@ -19,8 +19,8 @@ try {
     { stdio: "inherit" },
   );
 
-  const usage = await import(pathToFileURL(join(buildDir, "usage.js")));
-  const format = await import(pathToFileURL(join(buildDir, "format.js")));
+  const usage = await import(pathToFileURL(join(buildDir, "src", "usage.js")));
+  const format = await import(pathToFileURL(join(buildDir, "src", "format.js")));
 
   const baseSnapshot = (defaultLimit) => ({
     schemaVersion: 1,
@@ -33,7 +33,7 @@ try {
   const display = (defaultLimit, percentMode = "remaining") => format.formatUsageStatusline(
     baseSnapshot(defaultLimit),
     undefined,
-    { format: "compact", showWeekly: true, percentMode, updateMode: "turn" },
+    { format: "compact", show5h: true, showWeekly: true, percentMode, updateMode: "turn" },
   );
 
   const fixtures = [
@@ -81,12 +81,12 @@ try {
   print("live compact remaining", format.formatUsageStatusline(
     live,
     undefined,
-    { format: "compact", showWeekly: true, percentMode: "remaining", updateMode: "turn" },
+    { format: "compact", show5h: true, showWeekly: true, percentMode: "remaining", updateMode: "turn" },
   ));
   print("live compact used", format.formatUsageStatusline(
     live,
     undefined,
-    { format: "compact", showWeekly: true, percentMode: "used", updateMode: "turn" },
+    { format: "compact", show5h: true, showWeekly: true, percentMode: "used", updateMode: "turn" },
   ));
 } finally {
   rmSync(buildDir, { recursive: true, force: true });

@@ -4,6 +4,7 @@ A simple Pi extension that gives you:
 
 - clear OpenAI/Codex usage in your status line (`/usage`)
 - one-command Fast mode control (`/fast`)
+- optional preventive compaction for long agent loops (`/autocompact`)
 
 ## Install
 
@@ -17,11 +18,12 @@ pi install npm:@m4riok/pi-openai-tweaks
 
 ### 1) Usage status
 
-Shows 5h and 7d usage with reset countdowns in the footer/status line.
+Shows 7d usage with reset countdowns in the footer/status line. The 5h window is hidden by default.
 
 You can control:
 
 - format (`default` or `compact`)
+- show/hide 5h usage
 - show/hide weekly usage
 - percentage mode (`remaining` or `used`)
 - refresh mode (`turn` updates or background polling)
@@ -40,6 +42,8 @@ Quick commands also work:
 /usage refresh
 /usage format default
 /usage format compact
+/usage 5h on
+/usage 5h off
 /usage weekly on
 /usage weekly off
 /usage percent remaining
@@ -48,7 +52,29 @@ Quick commands also work:
 /usage update poll
 ```
 
-### 2) Fast mode
+### 2) Continuous-loop auto-compaction
+
+Use `/autocompact` to configure preventive context compaction during long-running agent loops.
+
+Defaults:
+
+- disabled
+- trigger at 90% of Pi's active-model context-window limit
+
+The trigger can be set from 50% through 99% in 1% steps. Percentages use Pi's `contextWindow` metadata for the active model, so the token threshold updates automatically after a model switch. When enabled, the extension checks usage after each model-response/tool batch. At the threshold it interrupts the active loop, compacts context, and starts a continuation turn when unfinished tool-driven work remains.
+
+Settings persist under `piOpenaiTweaks.autoCompact` in `~/.pi/agent/settings.json`.
+
+```text
+/autocompact
+/autocompact on
+/autocompact off
+/autocompact status
+/autocompact threshold
+/autocompact threshold 90
+```
+
+### 3) Fast mode
 
 Use `/fast` to control OpenAI Codex Fast mode.
 

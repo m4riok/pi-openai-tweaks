@@ -1,5 +1,5 @@
 import type { CodexUsageSnapshot, LimitWindow } from "./types.js";
-import type { UsageDisplayConfig } from "./config.js";
+import { DEFAULT_USAGE_DISPLAY_CONFIG, type UsageDisplayConfig } from "./config.js";
 
 type ColorName = "success" | "warning" | "error";
 
@@ -76,7 +76,7 @@ function maybeColor(text: string, color: ColorName, colorize?: Colorize): string
 export function formatUsageStatusline(
   snapshot: CodexUsageSnapshot,
   colorize?: Colorize,
-  config: UsageDisplayConfig = { format: "default", showWeekly: true, percentMode: "remaining", updateMode: "turn" },
+  config: UsageDisplayConfig = DEFAULT_USAGE_DISPLAY_CONFIG,
 ): string {
   const primary = snapshot.defaultLimit?.primary;
   const secondary = snapshot.defaultLimit?.secondary;
@@ -104,15 +104,14 @@ export function formatUsageStatusline(
   const sResetText = maybeColor(sReset, colorForResetTime(sResetSeconds, 7 * 24 * 3600), colorize);
 
   if (config.format === "compact") {
-    if (!config.showWeekly) {
-      return `U 5h:${pLeftText} ↺ ${pResetText}`;
-    }
-    return `U 5h:${pLeftText} ↺ ${pResetText} 7d:${sLeftText} ↺ ${sResetText}`;
+    const windows: string[] = [];
+    if (config.show5h) windows.push(`5h:${pLeftText} ↺ ${pResetText}`);
+    if (config.showWeekly) windows.push(`7d:${sLeftText} ↺ ${sResetText}`);
+    return ["U", ...windows].join(" ");
   }
 
-  if (!config.showWeekly) {
-    return `Usage 5h:${pLeftText} ${pctWord} resets in ${pResetText}`;
-  }
-
-  return `Usage 5h:${pLeftText} ${pctWord} resets in ${pResetText}, 7d:${sLeftText} ${pctWord} resets in ${sResetText}`;
+  const windows: string[] = [];
+  if (config.show5h) windows.push(`5h:${pLeftText} ${pctWord} resets in ${pResetText}`);
+  if (config.showWeekly) windows.push(`7d:${sLeftText} ${pctWord} resets in ${sResetText}`);
+  return `Usage${windows.length > 0 ? ` ${windows.join(", ")}` : ""}`;
 }

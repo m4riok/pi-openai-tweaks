@@ -27,8 +27,8 @@ try {
     { stdio: "inherit" },
   );
 
-  const { formatUsageStatusline } = await import(pathToFileURL(join(buildDir, "format.js")));
-  const config = { format: "compact", showWeekly: true, percentMode: "remaining", updateMode: "turn" };
+  const { formatUsageStatusline } = await import(pathToFileURL(join(buildDir, "src", "format.js")));
+  const config = { format: "compact", show5h: true, showWeekly: true, percentMode: "remaining", updateMode: "turn" };
 
   const cases = [
     { name: "5h0m + 7d0h", primary: 5 * 3600, secondary: 7 * 24 * 3600 },
