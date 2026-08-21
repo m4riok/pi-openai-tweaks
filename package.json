@@ -1,6 +1,6 @@
 {
   "name": "@m4riok/pi-openai-tweaks",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Pi extension for Codex usage, fast mode, and continuous-loop compaction",
   "type": "module",
   "license": "MIT",
