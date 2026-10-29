@@ -63,7 +63,9 @@ Defaults:
 
 The trigger can be set from 50% through 99% in 1% steps. Percentages use Pi's `contextWindow` metadata for the active model, so the token threshold updates automatically after a model switch. When enabled, the extension checks usage after each model-response/tool batch. At the threshold it interrupts the active loop, compacts context, and starts a continuation turn when unfinished tool-driven work remains.
 
-Settings persist under `piOpenaiTweaks.autoCompact` in `~/.pi/agent/settings.json`.
+Settings persist under `piOpenaiTweaks.autoCompact` in `~/.pi/agent/settings.json` (or the agent directory selected by `PI_CODING_AGENT_DIR`). Usage preferences share the `piOpenaiTweaks` section.
+
+Settings updates use Pi's shared lock and atomic file replacement, preserving unrelated settings and changes from other sessions. Invalid or unreadable settings are reported instead of reset. Failed saves leave the last successfully applied configuration active.
 
 ```text
 /autocompact

@@ -1,5 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { isObject, readSettings, updateSettings } from "./settings-store.js";
 
 export type UsageFormatMode = "default" | "compact";
 export type PercentMode = "remaining" | "used";
@@ -34,16 +33,7 @@ export const DEFAULT_AUTO_COMPACT_CONFIG: AutoCompactConfig = {
   thresholdPercent: 90,
 };
 
-function settingsPath(): string {
-  return join(process.env.HOME || process.env.USERPROFILE || ".", ".pi", "agent", "settings.json");
-}
-
-function isObj(v: unknown): v is Record<string, unknown> {
-  return !!v && typeof v === "object" && !Array.isArray(v);
-}
-
-function parseDisplayConfig(raw: unknown): UsageDisplayConfig {
-  if (!isObj(raw)) return DEFAULT_USAGE_DISPLAY_CONFIG;
+function parseDisplayConfig(raw: Record<string, unknown>): UsageDisplayConfig {
   const format = raw.format === "compact" ? "compact" : "default";
   const show5h = raw.show5h === true;
   const showWeekly = raw.showWeekly !== false;
@@ -52,8 +42,7 @@ function parseDisplayConfig(raw: unknown): UsageDisplayConfig {
   return { format, show5h, showWeekly, percentMode, updateMode };
 }
 
-function parseAutoCompactConfig(raw: unknown): AutoCompactConfig {
-  if (!isObj(raw)) return DEFAULT_AUTO_COMPACT_CONFIG;
+function parseAutoCompactConfig(raw: Record<string, unknown>): AutoCompactConfig {
   const threshold = raw.thresholdPercent;
   const thresholdPercent = Number.isInteger(threshold)
     && Number(threshold) >= MIN_AUTO_COMPACT_PERCENT
@@ -63,49 +52,34 @@ function parseAutoCompactConfig(raw: unknown): AutoCompactConfig {
   return { enabled: raw.enabled === true, thresholdPercent };
 }
 
-async function readSettings(): Promise<Record<string, unknown>> {
-  try {
-    const parsed = JSON.parse(await readFile(settingsPath(), "utf8"));
-    return isObj(parsed) ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-function extensionSettings(settings: Record<string, unknown>): Record<string, unknown> {
-  return isObj(settings.piOpenaiTweaks) ? settings.piOpenaiTweaks : {};
-}
-
-async function saveExtensionSettings(patch: Record<string, unknown>): Promise<void> {
-  const settings = await readSettings();
-  settings.piOpenaiTweaks = { ...extensionSettings(settings), ...patch };
-  await writeFile(settingsPath(), `${JSON.stringify(settings, null, 2)}\n`, "utf8");
+function settingsObject(raw: unknown, name: string): Record<string, unknown> {
+  if (raw === undefined) return {};
+  if (!isObject(raw)) throw new Error(`${name} must contain a JSON object`);
+  return raw;
 }
 
 export async function loadDisplayConfig(): Promise<UsageDisplayConfig> {
-  return parseDisplayConfig(extensionSettings(await readSettings()));
+  return parseDisplayConfig(settingsObject((await readSettings()).piOpenaiTweaks, "piOpenaiTweaks"));
 }
 
-export async function saveDisplayConfig(next: UsageDisplayConfig): Promise<void> {
-  await saveExtensionSettings({
-    format: next.format,
-    show5h: next.show5h,
-    showWeekly: next.showWeekly,
-    percentMode: next.percentMode,
-    updateMode: next.updateMode,
+export async function saveDisplayConfig(patch: Partial<UsageDisplayConfig>): Promise<UsageDisplayConfig> {
+  return updateSettings((settings) => {
+    const next = { ...settingsObject(settings.piOpenaiTweaks, "piOpenaiTweaks"), ...patch };
+    settings.piOpenaiTweaks = next;
+    return parseDisplayConfig(next);
   });
 }
 
 export async function loadAutoCompactConfig(): Promise<AutoCompactConfig> {
-  const settings = extensionSettings(await readSettings());
-  return parseAutoCompactConfig(settings.autoCompact);
+  const extension = settingsObject((await readSettings()).piOpenaiTweaks, "piOpenaiTweaks");
+  return parseAutoCompactConfig(settingsObject(extension.autoCompact, "piOpenaiTweaks.autoCompact"));
 }
 
-export async function saveAutoCompactConfig(next: AutoCompactConfig): Promise<void> {
-  await saveExtensionSettings({
-    autoCompact: {
-      enabled: next.enabled,
-      thresholdPercent: next.thresholdPercent,
-    },
+export async function saveAutoCompactConfig(patch: Partial<AutoCompactConfig>): Promise<AutoCompactConfig> {
+  return updateSettings((settings) => {
+    const extension = settingsObject(settings.piOpenaiTweaks, "piOpenaiTweaks");
+    const autoCompact = { ...settingsObject(extension.autoCompact, "piOpenaiTweaks.autoCompact"), ...patch };
+    settings.piOpenaiTweaks = { ...extension, autoCompact };
+    return parseAutoCompactConfig(autoCompact);
   });
 }

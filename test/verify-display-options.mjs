@@ -17,6 +17,7 @@ try {
   );
 
   process.env.HOME = homeDir;
+  process.env.PI_CODING_AGENT_DIR = join(homeDir, ".pi", "agent");
   symlinkSync(join(process.cwd(), "node_modules"), join(buildDir, "node_modules"), "dir");
   const configModule = await import(pathToFileURL(join(buildDir, "src", "config.js")));
   const { formatUsageStatusline } = await import(pathToFileURL(join(buildDir, "src", "format.js")));

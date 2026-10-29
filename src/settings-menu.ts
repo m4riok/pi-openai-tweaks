@@ -7,7 +7,10 @@ export async function openSettingsMenu(
   items: SettingItem[],
   onChange: (id: string, newValue: string) => Promise<void>,
 ): Promise<void> {
+  let pending = Promise.resolve();
   await ctx.ui.custom((tui, _theme, _keybindings, done) => {
+    const savedValues = new Map(items.map((item) => [item.id, item.currentValue]));
+    const revisions = new Map<string, number>();
     const container = new Container();
     container.addChild(new DynamicBorder());
 
@@ -15,7 +18,25 @@ export async function openSettingsMenu(
       items,
       10,
       getSettingsListTheme(),
-      onChange,
+      (id, newValue) => {
+        const revision = (revisions.get(id) ?? 0) + 1;
+        revisions.set(id, revision);
+        // SettingsList does not await callbacks. Serialize edits and contain
+        // rejections here rather than leaving an unhandled promise in the UI.
+        pending = pending.then(async () => {
+          try {
+            await onChange(id, newValue);
+            savedValues.set(id, newValue);
+          } catch (error) {
+            ctx.ui.notify(`Settings change failed: ${String(error)}`, "error");
+          }
+          // Older completions must not overwrite a newer pending UI selection.
+          if (revisions.get(id) === revision) {
+            settingsList.updateValue(id, savedValues.get(id)!);
+          }
+          tui.requestRender();
+        });
+      },
       () => done(undefined),
       { enableSearch: true },
     );
@@ -32,4 +53,5 @@ export async function openSettingsMenu(
       },
     };
   });
+  await pending;
 }

@@ -22,6 +22,15 @@ const FAST_MODELS = new Set(["gpt-5.4", "gpt-5.5"]);
 
 type FastOverride = "auto" | "on" | "off";
 
+function displayConfigPatch(id: string, value: string | undefined): Partial<UsageDisplayConfig> | undefined {
+  if (id === "format" && (value === "default" || value === "compact")) return { format: value };
+  if (id === "5h" && (value === "on" || value === "off")) return { show5h: value === "on" };
+  if (id === "weekly" && (value === "on" || value === "off")) return { showWeekly: value === "on" };
+  if (id === "percent" && (value === "remaining" || value === "used")) return { percentMode: value };
+  if (id === "update" && (value === "turn" || value === "poll")) return { updateMode: value };
+  return undefined;
+}
+
 function readJsonConfig(path: string): Record<string, unknown> {
   if (!existsSync(path)) return {};
   try {
@@ -250,15 +259,16 @@ export default function piOpenAiTweaksExtension(pi: ExtensionAPI): void {
           ];
 
           await openSettingsMenu(ctx, items, async (id, newValue) => {
-            if (id === "format" && (newValue === "default" || newValue === "compact")) display = { ...display, format: newValue };
-            else if (id === "5h") display = { ...display, show5h: newValue === "on" };
-            else if (id === "weekly") display = { ...display, showWeekly: newValue === "on" };
-            else if (id === "percent" && (newValue === "remaining" || newValue === "used")) display = { ...display, percentMode: newValue };
-            else if (id === "update" && (newValue === "turn" || newValue === "poll")) display = { ...display, updateMode: newValue };
-
-            await saveDisplayConfig(display);
+            const patch = displayConfigPatch(id, newValue);
+            if (!patch) return;
+            display = await saveDisplayConfig(patch);
             syncPolling();
-            await refreshStatus(ctx, display, isFastEnabled(), false);
+            try {
+              await refreshStatus(ctx, display, isFastEnabled(), false);
+            } catch (error) {
+              // Persistence succeeded; a refresh failure must not roll back the menu.
+              ctx.ui?.notify?.(`Usage unavailable: ${String(error)}`, "error");
+            }
           });
 
           await refreshStatus(ctx, display, isFastEnabled(), false);
@@ -268,8 +278,7 @@ export default function piOpenAiTweaksExtension(pi: ExtensionAPI): void {
         if (parts[0] === "format" && !parts[1] && ctx?.ui?.select) {
           const formatChoice = await ctx.ui.select("Usage format", ["default", "compact"]);
           if (formatChoice === "default" || formatChoice === "compact") {
-            display = { ...display, format: formatChoice };
-            await saveDisplayConfig(display);
+            display = await saveDisplayConfig({ format: formatChoice });
           }
           const line = await refreshStatus(ctx, display, isFastEnabled(), false);
           ctx.ui?.notify?.(line, "info");
@@ -279,8 +288,7 @@ export default function piOpenAiTweaksExtension(pi: ExtensionAPI): void {
         if (parts[0] === "5h" && !parts[1] && ctx?.ui?.select) {
           const fiveHourChoice = await ctx.ui.select("Show 5h", ["on", "off"]);
           if (fiveHourChoice === "on" || fiveHourChoice === "off") {
-            display = { ...display, show5h: fiveHourChoice === "on" };
-            await saveDisplayConfig(display);
+            display = await saveDisplayConfig({ show5h: fiveHourChoice === "on" });
           }
           const line = await refreshStatus(ctx, display, isFastEnabled(), false);
           ctx.ui?.notify?.(line, "info");
@@ -290,30 +298,15 @@ export default function piOpenAiTweaksExtension(pi: ExtensionAPI): void {
         if (parts[0] === "weekly" && !parts[1] && ctx?.ui?.select) {
           const weeklyChoice = await ctx.ui.select("Show weekly (7d)", ["on", "off"]);
           if (weeklyChoice === "on" || weeklyChoice === "off") {
-            display = { ...display, showWeekly: weeklyChoice === "on" };
-            await saveDisplayConfig(display);
+            display = await saveDisplayConfig({ showWeekly: weeklyChoice === "on" });
           }
           const line = await refreshStatus(ctx, display, isFastEnabled(), false);
           ctx.ui?.notify?.(line, "info");
           return;
         }
 
-        if (parts[0] === "format" && (parts[1] === "default" || parts[1] === "compact")) {
-          display = { ...display, format: parts[1] };
-          await saveDisplayConfig(display);
-        } else if (parts[0] === "5h" && (parts[1] === "on" || parts[1] === "off")) {
-          display = { ...display, show5h: parts[1] === "on" };
-          await saveDisplayConfig(display);
-        } else if (parts[0] === "weekly" && (parts[1] === "on" || parts[1] === "off")) {
-          display = { ...display, showWeekly: parts[1] === "on" };
-          await saveDisplayConfig(display);
-        } else if (parts[0] === "percent" && (parts[1] === "remaining" || parts[1] === "used")) {
-          display = { ...display, percentMode: parts[1] };
-          await saveDisplayConfig(display);
-        } else if (parts[0] === "update" && (parts[1] === "turn" || parts[1] === "poll")) {
-          display = { ...display, updateMode: parts[1] };
-          await saveDisplayConfig(display);
-        }
+        const patch = displayConfigPatch(parts[0], parts[1]);
+        if (patch) display = await saveDisplayConfig(patch);
 
         syncPolling();
         const line = await refreshStatus(ctx, display, isFastEnabled(), parts[0] === "refresh");
@@ -332,8 +325,8 @@ export default function piOpenAiTweaksExtension(pi: ExtensionAPI): void {
       fastOverride = "auto";
       syncPolling();
       await refreshStatus(ctx, display, isFastEnabled());
-    } catch {
-      // ignore startup failures
+    } catch (error) {
+      ctx.ui?.notify?.(`Usage unavailable: ${String(error)}`, "error");
     }
   });
 
